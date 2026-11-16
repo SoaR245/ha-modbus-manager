@@ -33,6 +33,7 @@ From **integration 1.0.11**, you can add a **[Cross-hub Combined Device](README_
 
 - iHM grid sensors (`grid_import_energy`, `grid_export_energy`, import/export power) at the **GRID.CT**
 - **`combined_daily_consumed_energy`** / **`combined_total_consumed_energy`** using WR PV/battery and iHM grid data (see [#50](https://github.com/TCzerny/ha-modbus-manager/issues/50))
+- **`combined_self_consumption_rate`** / **`combined_autarky_rate`** using inverter PV/battery and iHM grid/load power (instantaneous estimates)
 
 Single-template **`daily_consumed_energy`** on the inverter alone does **not** include iHM grid data.
 

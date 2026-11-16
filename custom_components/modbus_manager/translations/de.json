@@ -1061,6 +1061,12 @@
             "combined_total_consumed_energy": {
                 "name": "Kombinierter Gesamtverbrauch"
             },
+            "combined_self_consumption_rate": {
+                "name": "Eigenverbrauchsquote"
+            },
+            "combined_autarky_rate": {
+                "name": "Autarkiegrad"
+            },
             "firmware": {
                 "name": "Firmware-Version",
                 "state": {

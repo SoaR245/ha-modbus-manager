@@ -1042,6 +1042,12 @@
       "combined_total_consumed_energy": {
         "name": "Energia totale consumata combinata"
       },
+      "combined_self_consumption_rate": {
+        "name": "Tasso di autoconsumo"
+      },
+      "combined_autarky_rate": {
+        "name": "Tasso di autonomia"
+      },
       "firmware": {
         "name": "Versione firmware",
         "state": {

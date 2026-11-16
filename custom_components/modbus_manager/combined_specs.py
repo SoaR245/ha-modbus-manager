@@ -322,6 +322,24 @@ COMBINED_SENSOR_METRIC_SPECS: dict[str, dict[str, dict[str, Any]]] = {
             "source_candidates": ["total_active_power"],
             "aggregation": "single",
         },
+        "combined_self_consumption_rate": {
+            "name": "Self-Consumption Rate",
+            "aggregation": "power_rate",
+            "rate": "self_consumption",
+            "unit_of_measurement": "%",
+            "device_class": "power_factor",
+            "state_class": "measurement",
+            "precision": 1,
+        },
+        "combined_autarky_rate": {
+            "name": "Autarky Rate",
+            "aggregation": "power_rate",
+            "rate": "autarky",
+            "unit_of_measurement": "%",
+            "device_class": "power_factor",
+            "state_class": "measurement",
+            "precision": 1,
+        },
         # Persistent daily grid totals derived from iHM cumulative energy (issue #50).
         "combined_ihm_grid_import_daily": {
             "name": "iHM Grid Import Daily",

@@ -341,6 +341,7 @@ async def async_setup_entry(
                 "min",
                 "single",
                 "formula",
+                "power_rate",
                 "daily_meter",
             }
             for metric_key, metric_spec in metric_specs.items():

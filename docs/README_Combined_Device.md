@@ -155,6 +155,21 @@ Template sensors on a **single** inverter (`daily_consumed_energy` / `total_cons
 
 Formula sensors expose attributes: `formula`, `operands`, and `notes` for transparency.
 
+**Instantaneous rates** (`inverter_ihm`):
+
+| Entity | Formula |
+|--------|---------|
+| `combined_self_consumption_rate` | `(PV − export + battery discharge) / PV × 100` |
+| `combined_autarky_rate` | `(PV − export + battery discharge) / load × 100` |
+
+These match the SHx instantaneous calculations, using inverter DC PV and battery
+power and iHM GRID.CT and load power. The results are clamped to 0–100%; zero
+PV gives 0% self-consumption and zero or negative load gives 100% autarky.
+Missing required readings leave the rates unknown; battery power is treated
+as zero only when the inverter is explicitly configured without a battery.
+These are power-based estimates, not daily energy percentages: inverter losses,
+battery discharge, and updates at different times can affect them.
+
 **Binary:** `combined_pv_generating_any` (from inverter only).
 
 ---

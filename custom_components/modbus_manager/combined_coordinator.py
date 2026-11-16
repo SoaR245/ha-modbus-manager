@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import timedelta
+import math
 from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
@@ -494,6 +495,137 @@ class CombinedDeviceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         }
         return combined_value, metadata
 
+    def _power_rate_battery_record(
+        self, role_data: dict[str, dict[str, Any]]
+    ) -> dict[str, Any] | None:
+        """Resolve signed inverter battery power, including calculated legacy sensors."""
+        inverter_data = role_data.get(SOURCE_ROLE_INVERTER)
+        if not inverter_data:
+            return None
+        record = self._operand_record(
+            role_data,
+            {"source": SOURCE_ROLE_INVERTER, "candidates": ["battery_power"]},
+            "W",
+        )
+        if record:
+            return record if record.get("unit") in {"W", "kW"} else None
+
+        entry_id = self._entry_id_for_role(
+            self.entry.data.get("source_entry_id_a"),
+            self.entry.data.get("source_entry_id_b"),
+            SOURCE_ROLE_INVERTER,
+        )
+        entry = self.hass.config_entries.async_get_entry(entry_id) if entry_id else None
+        if entry is None:
+            return None
+
+        devices = entry.data.get("devices", [])
+        inverters = [
+            d for d in devices if isinstance(d, dict) and d.get("type") == "inverter"
+        ]
+        if len(inverters) != 1:
+            return None
+        inverter = inverters[0]
+        battery_config = inverter.get("battery_config", entry.data.get("battery_config"))
+        battery_enabled = inverter.get(
+            "battery_enabled", entry.data.get("battery_enabled")
+        )
+        has_battery_device = any(
+            isinstance(device, dict) and device.get("type") == "battery"
+            for device in devices
+        )
+        if (
+            battery_config == "none"
+            and battery_enabled is not True
+            and not has_battery_device
+        ):
+            return {
+                "value": 0.0,
+                "role": SOURCE_ROLE_INVERTER,
+                "unique_id": None,
+                "unit": "W",
+            }
+        prefix = str(inverter.get("prefix", "")).strip().lower()
+        registry = er.async_get(self.hass)
+        for entity in registry.entities.values():
+            if entity.config_entry_id != entry_id or entity.domain != "sensor":
+                continue
+            unique_id = str(entity.unique_id or "").lower()
+            if unique_id != f"{prefix}_battery_power":
+                continue
+            state = self.hass.states.get(entity.entity_id)
+            if state is None:
+                return None
+            try:
+                value = float(state.state)
+            except (TypeError, ValueError):
+                return None
+            unit = state.attributes.get("unit_of_measurement")
+            value = self._convert_unit(value, unit, "W")
+            if value is None or not math.isfinite(value):
+                return None
+            return {
+                "value": value,
+                "role": SOURCE_ROLE_INVERTER,
+                "unique_id": unique_id,
+                "unit": unit,
+            }
+        return None
+
+    def _power_rate_metric(
+        self, role_data: dict[str, dict[str, Any]], metric_spec: dict[str, Any]
+    ) -> tuple[float | None, dict[str, Any] | None]:
+        """Compute the SHx instantaneous rate using iHM grid and load power."""
+        rate = metric_spec.get("rate")
+        if rate not in {"self_consumption", "autarky"}:
+            return None, None
+        operands = {
+            "pv": {"source": SOURCE_ROLE_INVERTER, "candidates": ["total_dc_power"]},
+            "grid": {
+                "source": SOURCE_ROLE_IHM,
+                "candidates": ["meter_active_power_raw"],
+            },
+        }
+        if rate == "autarky":
+            operands["load"] = {"source": SOURCE_ROLE_IHM, "candidates": ["load_power"]}
+        records: dict[str, dict[str, Any]] = {}
+        for name, spec in operands.items():
+            record = self._operand_record(role_data, spec, "W")
+            if (
+                not record
+                or record.get("unit") not in {"W", "kW"}
+                or not math.isfinite(record["value"])
+            ):
+                return None, None
+            records[name] = {**record, "source_unit": record["unit"], "unit": "W"}
+        battery = self._power_rate_battery_record(role_data)
+        if not battery or not math.isfinite(battery["value"]):
+            return None, None
+        records["battery"] = {**battery, "source_unit": battery["unit"], "unit": "W"}
+        pv = records["pv"]["value"]
+        grid = records["grid"]["value"]
+        self_consumed = pv - max(-grid, 0) + max(battery["value"], 0)
+        denominator = pv if rate == "self_consumption" else records["load"]["value"]
+        if denominator <= 0:
+            value = 0.0 if rate == "self_consumption" else 100.0
+        else:
+            value = min(100.0, max(0.0, self_consumed / denominator * 100))
+        formula = (
+            "clamp((pv - max(-grid, 0) + max(battery, 0)) / "
+            + ("pv" if rate == "self_consumption" else "load")
+            + " * 100, 0, 100)"
+        )
+        return round(value, metric_spec.get("precision", 1)), {
+            "unit_of_measurement": "%",
+            "device_class": metric_spec.get("device_class"),
+            "state_class": metric_spec.get("state_class"),
+            "precision": metric_spec.get("precision"),
+            "aggregation": "formula",
+            "formula": formula,
+            "operands": records,
+            "notes": "iHM grid: positive import, negative export; inverter battery: positive discharge.",
+        }
+
     @staticmethod
     def _extract_boolean_value(
         source_data: dict[str, Any], metric_candidates: list[str]
@@ -646,6 +778,10 @@ class CombinedDeviceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                         role_data,
                         metric_spec,
                         daily_meter_values=daily_meter_values,
+                    )
+                elif aggregation == "power_rate":
+                    combined_value, combined_meta = self._power_rate_metric(
+                        role_data, metric_spec
                     )
                 elif aggregation == "single":
                     source_role = str(metric_spec.get("source", "")).strip().lower()
